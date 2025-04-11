@@ -138,3 +138,190 @@ namespace GraphGame
 
             RestartGame();
         }
+            private void AddInitialVertices()
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                int x = rand.Next(50, ClientSize.Width - 50);
+                int y = rand.Next(50, ClientSize.Height / 2);
+                int weight = rand.Next(1, 4); // 1–зелёный, 2–красный, 3–жёлтый
+
+                var vertex = new Vertex
+                {
+                    X = x,
+                    Y = y,
+                    Weight = weight,
+                    VertexColor = GetVertexColor(weight)
+                };
+
+                vertices.Add(vertex);
+            }
+
+            GenerateEdges();
+        }
+
+        private void GenerateEdges()
+        {
+            edges.Clear();
+
+            foreach (var v1 in vertices)
+            {
+                foreach (var v2 in vertices)
+                {
+                    if (v1 != v2 && rand.NextDouble() < 0.30)
+                    {
+                        edges.Add(new Edge { Start = v1, End = v2 });
+                    }
+                }
+            }
+
+            EnsureGraphIsConnected();
+        }
+
+        private void EnsureGraphIsConnected()
+        {
+            var visited = new HashSet<Vertex>();
+            var stack = new Stack<Vertex>();
+
+            if (vertices.Count > 0)
+            {
+                stack.Push(vertices[0]);
+            }
+
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                if (!visited.Contains(current))
+                {
+                    visited.Add(current);
+                    foreach (var edge in edges.Where(e => e.Start == current || e.End == current))
+                    {
+                        var neighbor = edge.Start == current ? edge.End : edge.Start;
+                        if (!visited.Contains(neighbor))
+                        {
+                            stack.Push(neighbor);
+                        }
+                    }
+                }
+            }
+
+            if (visited.Count != vertices.Count)
+            {
+                vertices = vertices.Where(v => visited.Contains(v)).ToList();
+                edges = edges.Where(e => visited.Contains(e.Start) && visited.Contains(e.End)).ToList();
+            }
+        }
+
+        private Color GetVertexColor(int weight)
+        {
+            return weight switch
+            {
+                1 => Color.Green,
+                2 => Color.Red,
+                3 => Color.Yellow,
+                _ => Color.White
+            };
+        }
+
+        private void GameTimer_Tick(object sender, EventArgs e)
+        {
+            foreach (var vertex in vertices)
+            {
+                vertex.Y += 2;
+            }
+
+            if (player.IsAttached && currentVertex != null)
+            {
+                player.Position = new Point(currentVertex.X, currentVertex.Y);
+            }
+
+            vertices.RemoveAll(v => v.Y > ClientSize.Height);
+
+            if (vertices.Count < 5)
+            {
+                AddInitialVertices();
+            }
+
+            if (player.Position.Y >= ClientSize.Height)
+            {
+                EndGame($"Вы коснулись нижнего края! Ваш результат: {score}.");
+            }
+
+            Invalidate();
+        }
+        private void GameDurationTimer_Tick(object sender, EventArgs e)
+        {
+            gameTimeLeft--;
+
+            if (gameTimeLeft <= 0)
+            {
+                EndGame($"Время вышло! Ваш результат: {score}.");
+            }
+
+            Invalidate();
+        }
+
+        private void ShakeTimer_Tick(object sender, EventArgs e)
+        {
+            int verticesToRemove = rand.Next(1, vertices.Count / 2);
+
+            for (int i = 0; i < verticesToRemove; i++)
+            {
+                var vertexToRemove = vertices[rand.Next(vertices.Count)];
+                vertices.Remove(vertexToRemove);
+                edges.RemoveAll(edge => edge.Start == vertexToRemove || edge.End == vertexToRemove);
+            }
+
+            EnsureGraphIsConnected();
+            Invalidate();
+        }
+
+        private void GameForm_MouseDown(object sender, MouseEventArgs e)
+        {
+            foreach (var vertex in vertices)
+            {
+                if (Math.Abs(vertex.X - e.X) < 20 && Math.Abs(vertex.Y - e.Y) < 20)
+                {
+                    if (currentVertex == null || edges.Any(edge => edge.Connects(currentVertex, vertex)))
+                    {
+                        currentVertex = vertex;
+                        player.Position = new Point(vertex.X, vertex.Y);
+                        player.IsAttached = true;
+
+                        score += vertex.Weight;
+                        vertexCount++;
+                        break;
+                    }
+                }
+            }
+
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+
+            g.DrawString($"Время: {gameTimeLeft} сек", Font, Brushes.Black, 10, 10);
+            g.DrawString($"Счёт: {score}", Font, Brushes.Black, 10, 30);
+
+            foreach (var edge in edges)
+            {
+                g.DrawLine(Pens.Black, edge.Start.X, edge.Start.Y, edge.End.X, edge.End.Y);
+            }
+
+            foreach (var vertex in vertices)
+            {
+                using (Brush brush = new SolidBrush(vertex.VertexColor))
+                {
+                    g.FillEllipse(brush, vertex.X - 15, vertex.Y - 15, 30, 30);
+                }
+
+                g.DrawString(vertex.Weight.ToString(), Font, Brushes.White, vertex.X - 5, vertex.Y - 5);
+            }
+
+            g.FillRectangle(Brushes.Red, player.Position.X - 15, player.Position.Y - 30, 30, 60);
+        }
+    }
+}
